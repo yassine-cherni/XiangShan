@@ -28,6 +28,8 @@ abstract class BpuModule(implicit p: Parameters) extends XSModule with HasBpuPar
 
 abstract class BasePredictor(implicit p: Parameters) extends BpuModule {
   val io: BasePredictorIO
+
+  def EnableFastTrain: Boolean
 }
 
 abstract class BasePredictorIO(implicit p: Parameters) extends BpuBundle {
@@ -37,7 +39,7 @@ abstract class BasePredictorIO(implicit p: Parameters) extends BpuBundle {
   val stageCtrl: StageCtrl = Input(new StageCtrl)
   // predict request
   val startVAddr: PrunedAddr = Input(PrunedAddr(VAddrBits))
-  // train
+  // train: use resolved branch to train bpu
   val train: Valid[Train] = Input(Valid(new Train))
 
   val resetDone: Bool = Output(Bool())

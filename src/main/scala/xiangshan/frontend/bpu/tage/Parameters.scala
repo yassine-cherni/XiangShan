@@ -60,4 +60,7 @@ trait HasTageParameters extends HasBpuParameters {
   def WriteBufferSize:              Int                = tageParameters.WriteBufferSize
 
   def NumTables: Int = TableInfos.length
+
+  // tage cannot be fast-trained, this is required by abstract class BasePredictor
+  def EnableFastTrain: Boolean = false
 }

@@ -103,6 +103,12 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
 
   private val s3_override = WireDefault(false.B)
 
+  private val s1_prediction = Wire(new Prediction)
+  private val s2_prediction = Wire(new Prediction)
+  private val s3_prediction = Wire(new Prediction)
+
+  private val s3_meta = Wire(new BpuMeta)
+
   private val s0_pc    = WireDefault(0.U.asTypeOf(PrunedAddr(VAddrBits)))
   private val s0_pcReg = RegEnable(s0_pc, !s0_stall)
 
@@ -129,13 +135,32 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
 
   predictors.foreach { p =>
     // TODO: duplicate pc and fire to solve high fan-out issue
-    p.io.startVAddr                 := s0_pc
-    p.io.stageCtrl                  := stageCtrl
-    p.io.train.valid                := train.valid
-    p.io.train.bits.meta            := train.bits.meta
-    p.io.train.bits.startVAddr      := train.bits.startVAddr
-    p.io.train.bits.branches        := train.bits.branches
-    p.io.train.bits.firstMispredict := t0_firstMispredict
+    p.io.startVAddr := s0_pc
+    p.io.stageCtrl  := stageCtrl
+
+    if (p.EnableFastTrain) {
+      // fast train: from s3 override
+      println(s"[Bpu] use fast train for ${p.getClass.getSimpleName}")
+      p.io.train.valid           := s3_fire && s3_override
+      p.io.train.bits.meta       := s3_meta
+      p.io.train.bits.startVAddr := s3_pc
+      // FIXME: use all mbtb identified branches?
+      p.io.train.bits.branches                       := 0.U.asTypeOf(train.bits.branches)
+      p.io.train.bits.branches.head.valid            := true.B
+      p.io.train.bits.branches.head.bits.target      := s3_prediction.target
+      p.io.train.bits.branches.head.bits.taken       := s3_prediction.taken
+      p.io.train.bits.branches.head.bits.cfiPosition := s3_prediction.cfiPosition
+      p.io.train.bits.branches.head.bits.attribute   := s3_prediction.attribute
+      p.io.train.bits.branches.head.bits.mispredict  := true.B // s3 override must be a s1 mispredict
+      p.io.train.bits.firstMispredict                := p.io.train.bits.branches.head
+    } else {
+      // train: from Ftq + selected (first mispredict)
+      p.io.train.valid                := train.valid
+      p.io.train.bits.meta            := train.bits.meta
+      p.io.train.bits.startVAddr      := train.bits.startVAddr
+      p.io.train.bits.branches        := train.bits.branches
+      p.io.train.bits.firstMispredict := t0_firstMispredict
+    }
   }
 
   /* *** predictor specific inputs *** */
@@ -145,6 +170,7 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
   abtb.io.redirectValid := redirect.valid
   abtb.io.overrideValid := s3_override
 
+  // ras
   ras.io.redirect.valid          := redirect.valid
   ras.io.redirect.bits.attribute := redirect.bits.attribute
   ras.io.redirect.bits.brPc      := redirect.bits.startVAddr
@@ -152,7 +178,6 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
   ras.io.redirect.bits.meta      := redirect.bits.speculationMeta.rasMeta
   ras.io.redirect.bits.level     := 0.U(1.W)
 
-  // ras
   ras.io.commit.valid            := commitUpdate.valid
   ras.io.commit.bits.attribute   := commitUpdate.bits.branches(0).bits.attribute
   ras.io.commit.bits.startPc     := commitUpdate.bits.startVAddr.toUInt
@@ -201,7 +226,6 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
   // s1 prediction selection:
   // if ubtb or abtb find a taken branch, use the corresponding prediction
   // otherwise, use fall-through prediction
-  private val s1_prediction = Wire(new Prediction)
   s1_prediction := MuxCase(
     fallThrough.io.prediction,
     Seq(
@@ -209,11 +233,15 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
       abtb.io.prediction.taken -> abtb.io.prediction
     )
   )
-  private val s2_prediction   = RegEnable(s1_prediction, s1_fire)
+
+  // s2 prediction: no predictor at this stage, just latch s1 prediction
+  s2_prediction := RegEnable(s1_prediction, s1_fire)
+
+  // s3 prediction
+  // latch input first
   private val s3_inPrediction = RegEnable(s2_prediction, s2_fire)
-  // s3 prediction: TODO
+  // then override, TODO
   // TODO: compare tage and ittage prediction.position here and choose the first one
-  private val s3_prediction = Wire(new Prediction)
   s3_prediction                  := DontCare
   ras.io.specIn.valid            := s3_fire
   ras.io.specIn.bits.startPc     := s3_pc.toUInt
@@ -222,7 +250,7 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
   ras.io.specIn.bits.cfiPosition := s3_inPrediction.cfiPosition
   ras.io.specIn.bits.target      := s3_inPrediction.target
 
-  // to Ftq
+  /* *** Ftq *** */
   io.toFtq.prediction.valid := s1_valid && s2_ready || s3_fire && s3_override
   when(s3_override) {
     io.toFtq.prediction.bits.fromStage(s3_pc, s3_prediction)
@@ -251,15 +279,14 @@ class Bpu(implicit p: Parameters) extends BpuModule with HalfAlignHelper {
   private val s3_rasMeta = ras.io.specMeta
 
   // phr meta
-  val s2_phrMeta = RegEnable(phr.io.phrPtr, s1_fire)
-  val s3_phrMeta = RegEnable(s2_phrMeta, s2_fire)
+  private val s2_phrMeta = RegEnable(phr.io.phrPtr, s1_fire)
+  private val s3_phrMeta = RegEnable(s2_phrMeta, s2_fire)
 
   private val s3_speculationMeta = Wire(new BpuSpeculationMeta)
   s3_speculationMeta.phrHistPtr := s3_phrMeta
   s3_speculationMeta.rasMeta    := s3_rasMeta
   s3_speculationMeta.topRetAddr := ras.io.topRetAddr
 
-  private val s3_meta = Wire(new BpuMeta)
   s3_meta.abtb   := s3_abtbMeta
   s3_meta.mbtb   := s3_mbtbMeta
   s3_meta.ras    := s3_rasMeta
