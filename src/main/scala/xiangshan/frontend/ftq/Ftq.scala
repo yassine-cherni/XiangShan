@@ -36,8 +36,8 @@ import xiangshan.frontend.FtqToBpuIO
 import xiangshan.frontend.FtqToICacheIO
 import xiangshan.frontend.FtqToIfuIO
 import xiangshan.frontend.IfuToFtqIO
-import xiangshan.frontend.PrunedAddr
 import xiangshan.frontend.PrunedAddrInit
+import xiangshan.frontend.bpu.BpuPerfInfo
 import xiangshan.frontend.bpu.BpuSpeculationMeta
 
 class Ftq(implicit p: Parameters) extends FtqModule
@@ -58,10 +58,7 @@ class Ftq(implicit p: Parameters) extends FtqModule
     val fromBackend: CtrlToFtqIO = Flipped(new CtrlToFtqIO)
     val toBackend:   FtqToCtrlIO = new FtqToCtrlIO
 
-    val bpuInfo = new Bundle {
-      val bpRight: UInt = Output(UInt(XLEN.W))
-      val bpWrong: UInt = Output(UInt(XLEN.W))
-    }
+    val bpuInfo: BpuPerfInfo = new BpuPerfInfo
 
     // for perf
     val ControlBTBMissBubble: Bool = Output(Bool())

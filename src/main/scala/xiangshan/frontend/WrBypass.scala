@@ -21,6 +21,7 @@ import org.chipsalliance.cde.config.Parameters
 import utility._
 import xiangshan._
 
+// TODO: remove this in ittage, maybe WriteBuffer is good enough
 class WrBypass[T <: Data](
     gen:            T,
     val numEntries: Int,
