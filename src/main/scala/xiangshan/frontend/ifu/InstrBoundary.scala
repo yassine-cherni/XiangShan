@@ -32,6 +32,7 @@ class InstrBoundary(implicit p: Parameters) extends IfuModule with PreDecodeHelp
     }
     class InstrBoundaryResp(implicit p: Parameters) extends IfuBundle {
       val instrValid:                        Vec[Bool] = Vec(FetchBlockInstNum, Bool())
+      val instrEndVec:                       Vec[Bool] = Vec(FetchBlockInstNum, Bool())
       val isRvc:                             Vec[Bool] = Vec(FetchBlockInstNum, Bool())
       val firstFetchBlockLastInstrIsHalfRvi: Bool      = Bool()
       val lastInstrIsHalfRvi:                Bool      = Bool()
@@ -83,8 +84,11 @@ class InstrBoundary(implicit p: Parameters) extends IfuModule with PreDecodeHelp
     )
   }
 
-  io.resp.instrValid := boundary.zip(isRvc).zip(io.req.instrRange).map { case ((boundary, isRvc), range) =>
-    (!boundary || isRvc) && range
+  io.resp.instrValid := boundary.zip(io.req.instrRange).map { case (boundary, range) =>
+    boundary && range
+  }
+  io.resp.instrEndVec := boundary.zip(isRvc).zip(io.req.instrRange).map { case ((boundary, isRvc), range) =>
+    (!boundary || (boundary && isRvc)) && range
   }
   io.resp.isRvc := boundary.zip(isRvc).zip(io.req.instrRange).map { case ((boundary, isRvc), range) =>
     boundary && isRvc && range

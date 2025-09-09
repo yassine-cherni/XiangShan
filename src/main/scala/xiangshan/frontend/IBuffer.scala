@@ -127,6 +127,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     result.foldpc           := foldpc
     result.pd               := pd
     result.predTaken        := predTaken
+    result.identifiedCfi    := identifiedCfi
     result.ftqPtr           := ftqPtr
     result.exceptionType    := exceptionType
     result.backendException := backendException
@@ -147,6 +148,7 @@ class IBufOutEntry(implicit p: Parameters) extends XSBundle {
   val foldpc           = UInt(MemPredPCWidth.W)
   val pd               = new PreDecodeInfo
   val predTaken        = Bool()
+  val identifiedCfi    = Bool()
   val ftqPtr           = new FtqPtr
   val exceptionType    = IBufferExceptionType()
   val backendException = Bool()
@@ -169,7 +171,7 @@ class IBufOutEntry(implicit p: Parameters) extends XSBundle {
     cf.trigger                           := triggered
     cf.pd                                := pd
     cf.pred_taken                        := predTaken
-    cf.identifiedCfi                     := instrEndOffset
+    cf.identifiedCfi                     := identifiedCfi
     cf.crossPageIPFFix                   := IBufferExceptionType.isCrossPage(this.exceptionType)
     cf.storeSetHit                       := DontCare
     cf.waitForRobIdx                     := DontCare
